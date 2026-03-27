@@ -3,7 +3,7 @@ CS2-Smarter-Bot is a plugin based on CounterStrikeSharp that aims to make bots s
 # Features
 1. Keep bots always active
 
-2. Improve bots' maneuver
+2. Improve bots' movement
 
 3. Allow bots to spam smoke and tweak bots' vision in smoke to make it more reasonable
 
