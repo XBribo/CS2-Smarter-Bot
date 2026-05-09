@@ -9,7 +9,7 @@ CS2-Smarter-Bot is a plugin based on CounterStrikeSharp that aims to make bots s
 
 4. Allow bots to spam smoke and tweak bots' vision in smoke to make it more reasonable
 
-5. Each bot has a 60% chance to anti-flash, close to pro level
+5. Each bot has a chance to anti-flash, according to the visible duration of the flash
 
 6. Allows bots to spray at any range
 
