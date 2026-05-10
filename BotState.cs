@@ -15,8 +15,8 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.6.12";
-    public override string ModuleAuthor => "ed0ard";
+    public override string ModuleVersion => "1.7.0";
+    public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
     private const float ExpandedValue = 4000f;
@@ -1092,9 +1092,9 @@ public class BotState : BasePlugin
 
                 float msLeft = (detonateAt - now) * 1000f;
                 double prob = msLeft <= 150f ? 0.05
-                            : msLeft <= 250f ? 0.10
-                            : msLeft <= 400f ? 0.40
-                            : msLeft <= 600f ? 0.80
+                            : msLeft <= 250f ? 0.20
+                            : msLeft <= 400f ? 0.50
+                            : msLeft <= 600f ? 0.90
                             : 0.95;
 
                 bool avoided = _random.NextDouble() <= prob;
