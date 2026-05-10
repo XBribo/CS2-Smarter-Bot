@@ -1,8 +1,8 @@
 # CS2-Smarter-Bot
 CS2-Smarter-Bot is a plugin based on CounterStrikeSharp that aims to make bots smarter.
-# Preposition
+# Requirement
 
-1. [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace)
+[Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace)
 
 # Features
 1. Keeps bots always active
