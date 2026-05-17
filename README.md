@@ -23,9 +23,9 @@ CS2-Smarter-Bot is a plugin based on CounterStrikeSharp that aims to make bots s
 <img width="464" height="433" alt="smarter" src="https://github.com/user-attachments/assets/43ed231f-a79e-456d-8a25-862d476ccad4" />
 
 # Installation
-1. Download the latest **RayTrace-MM.zip** and **RayTrace-CSS-API.zip** from [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace/releases)
+1. Download the latest **RayTrace-MM.tar.gz** and **RayTrace-CSS-API.tar.gz** from [Ray-Trace](https://github.com/FUNPLAY-pro-CS2/Ray-Trace/releases)
 
-2. Extract the folder and upload it to `game/csgo/addons` on your server
+2. Extract the folders and upload them to `game/csgo/addons` on your server
 
 3. Download the latest **BotState.zip** from [Releases](https://github.com/ed0ard/CS2-Smarter-Bot/releases)
 
