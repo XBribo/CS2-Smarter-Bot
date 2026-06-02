@@ -15,11 +15,11 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.7.1";
+    public override string ModuleVersion => "1.7.2";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
-    private const float ExpandedValue = 4000f;
+    private const float ExpandedValue = 500f;
     private const float NormalValue = 50f;
     private const float RestoreDelay = 1.0f;
 
@@ -208,7 +208,7 @@ public class BotState : BasePlugin
     {
         if (_defuseExpandTimer != null) return;
 
-        _defuseExpandTimer = AddTimer(3.5f, () =>
+        _defuseExpandTimer = AddTimer(4.0f, () =>
         {
             _defuseExpandTimer = null;
             if (!_isBombBeingDefused) return;
@@ -216,7 +216,7 @@ public class BotState : BasePlugin
             _isDefuseExpanded = true;
             SetSmokeLength(ExpandedValue);
 
-            AddTimer(1.5f, () =>
+            AddTimer(1.0f, () =>
             {
                 _isDefuseExpanded = false;
                 SetSmokeLength(NormalValue);
