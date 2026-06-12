@@ -15,7 +15,7 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.7.2";
+    public override string ModuleVersion => "1.7.3";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
@@ -81,6 +81,7 @@ public class BotState : BasePlugin
     public override void Load(bool hotReload)
     {
         _smokeConVar = ConVar.Find("bot_max_visible_smoke_length");
+        RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
         RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawn);
         RegisterEventHandler<EventRoundFreezeEnd>(OnRoundFreezeEnd);
@@ -763,6 +764,33 @@ public class BotState : BasePlugin
     private HookResult OnRoundStart(EventRoundStart @event, GameEventInfo info)
     {
         _isFreezeTime = true;
+
+        // Per-round transient state keyed by player index. Indices are reused by
+        // later connections, so stale entries would leak last round's movement /
+        // stuck / door state onto a different bot.
+        _prevInAir.Clear();
+        _lastForwardDir.Clear();
+        _ladderExitTime.Clear();
+        _lastLateralDir.Clear();
+        _doorEventCooldown.Clear();
+        _stuckStartTime.Clear();
+        _stuckStartPos.Clear();
+        _stuckJumpDone.Clear();
+        _stuckJumpCount.Clear();
+        _stuckMaxSpeed.Clear();
+        _idleStartTime.Clear();
+        _lastRepathTime.Clear();
+        _hasFiredThisAttack.Clear();
+        _prevIsAttacking.Clear();
+        _cachedInAir.Clear();
+        _cachedNearLadder.Clear();
+
+        // Flash projectiles never survive a round transition; drop their tracking
+        // so entity indices reused next round don't match stale decisions.
+        _flashThrownAt.Clear();
+        _flashRolledByBot.Clear();
+        _flashDecisions.Clear();
+        _flashRejectLogged.Clear();
         return HookResult.Continue;
     }
 
