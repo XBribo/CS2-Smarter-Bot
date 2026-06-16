@@ -15,7 +15,7 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.7.3";
+    public override string ModuleVersion => "1.7.4";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
@@ -418,6 +418,17 @@ public class BotState : BasePlugin
 
             ref float panictimescale = ref panicTimer.Timescale;
             panictimescale = 1.0f;
+            // Never be surprised
+            CountdownTimer surpriseTimer = bot.SurpriseTimer;
+
+            ref float surpriseDuration = ref surpriseTimer.Duration;
+            surpriseDuration = 0.0f;
+
+            ref float surpriseTimestamp = ref surpriseTimer.Timestamp;
+            surpriseTimestamp = 0.0f;
+
+            ref float surpriseTimescale = ref surpriseTimer.Timescale;
+            surpriseTimescale = 1.0f;
             // Always dodge
             ref bool isEnemySniperVisible = ref bot.IsEnemySniperVisible;
             isEnemySniperVisible = true;
