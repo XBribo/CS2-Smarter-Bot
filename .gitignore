@@ -1,0 +1,20 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+publish/
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local dependency checkout
+Ray-Trace/
+libs/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
