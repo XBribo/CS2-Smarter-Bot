@@ -8,6 +8,7 @@ using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Core.Capabilities;
 using RayTraceAPI;
+using BotControllerApi;
 using System;
 using System.Runtime.CompilerServices;
 
@@ -16,7 +17,7 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.7.5";
+    public override string ModuleVersion => "1.8.0";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
