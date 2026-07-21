@@ -1249,7 +1249,7 @@ public class BotState : BasePlugin
             now < cooldownEnd)
             return;
 
-        if (!TryGetReloadInterruptWeapon(pawn, out int weaponDefIndex))
+        if (!GetReloadInterruptWeapon(pawn, out int weaponDefIndex))
             return;
 
         if (!BotControllerBridge.SwitchBotWeapon(
@@ -1262,7 +1262,7 @@ public class BotState : BasePlugin
     }
 
     // Selects a loaded primary first, then a loaded secondary weapon
-    private static bool TryGetReloadInterruptWeapon(
+    private static bool GetReloadInterruptWeapon(
         CCSPlayerPawn pawn, out int weaponDefIndex)
     {
         weaponDefIndex = -1;
