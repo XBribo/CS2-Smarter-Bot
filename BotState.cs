@@ -387,7 +387,7 @@ public class BotState : BasePlugin
 
             int idx = (int)player.Index;
             float now = Server.CurrentTime;
-            TryInterruptReload(player, pawn, bot, now);
+            InterruptReload(player, pawn, bot, now);
             // Door Stuck Fix
             bool inDoorCooldown = _doorEventCooldown.TryGetValue(idx, out float doorCooldownEnd) && now < doorCooldownEnd;
 
@@ -889,7 +889,7 @@ public class BotState : BasePlugin
             bool locked = BotControllerBridge.LockKnife(
                 _botController, bot.Slot);
             if (switched)
-                QueueInspectPulse(bot.Slot);
+                QueueInspectInjection(bot.Slot);
             if (locked)
                 _knifeLockedBotSlots.Add(bot.Slot);
 
@@ -902,8 +902,8 @@ public class BotState : BasePlugin
 
     }
 
-    // Queues a native usercmd inspect pulse after the knife becomes active
-    private void QueueInspectPulse(int slot)
+    // Queues a one-command inspect injection after the knife becomes active
+    private void QueueInspectInjection(int slot)
     {
         Server.NextFrame(() =>
         {
@@ -914,11 +914,11 @@ public class BotState : BasePlugin
                 !player.PawnIsAlive || player.HasBeenControlledByPlayerThisRound)
                 return;
 
-            if (!BotControllerBridge.PulseUsercmdButton(
-                    _botController, slot, InspectButtonMask))
+            if (BotControllerBridge.InjectUsercmd(
+                    _botController, slot, InspectButtonMask) <= 0)
             {
                 Console.WriteLine(
-                    $"[Smarter-Bot] Inspect pulse failed for slot {slot}");
+                    $"[Smarter-Bot] Inspect injection failed for slot {slot}");
             }
         });
     }
@@ -959,13 +959,13 @@ public class BotState : BasePlugin
                 .SwitchBotWeapon(slot, defIndex);
         }
 
-        // Queues one usercmd button press and release on a Bot
+        // Creates an independently cancellable usercmd injection on a Bot
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public static bool PulseUsercmdButton(
-            object api, int slot, ulong buttonMask)
+        public static long InjectUsercmd(
+            object api, int slot, ulong buttonMask, int durationMs = 0)
         {
             return ((BotControllerApi.IBotControllerApi)api)
-                .PulseUsercmdButton(slot, buttonMask);
+                .InjectUsercmd(slot, buttonMask, durationMs);
         }
 
         // Applies the knife-slot weapon lock to one Bot
@@ -1237,7 +1237,7 @@ public class BotState : BasePlugin
     }
     //---------------------------------------------------------------------------------------
     // Cancels a reload when Valve reports a visible enemy and a usable firearm exists
-    private void TryInterruptReload(
+    private void InterruptReload(
         CCSPlayerController player, CCSPlayerPawn pawn, CCSBot bot, float now)
     {
         if (_botController == null || !bot.IsEnemyVisible ||
