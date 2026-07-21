@@ -17,7 +17,7 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.8.0";
+    public override string ModuleVersion => "1.8.1";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
@@ -25,6 +25,8 @@ public class BotState : BasePlugin
     private const float NormalValue = 50f;
     private const float RestoreDelay = 1.0f;
     private const int KnifeDefinitionIndex = 9001;
+    private const float ReloadInterruptCooldown = 0.75f;
+    private const ulong InspectButtonMask = (ulong)PlayerButtons.Inspect;
 
     private bool _isExpanded = false;
     private ConVar? _smokeConVar;
@@ -47,6 +49,7 @@ public class BotState : BasePlugin
     private readonly Dictionary<int, float> _stuckMaxSpeed = new();
     private readonly Dictionary<int, float> _idleStartTime = new();
     private readonly Dictionary<int, float> _lastRepathTime = new();
+    private readonly Dictionary<int, float> _reloadInterruptCooldown = new();
     private bool _isFreezeTime = false;
 
     private readonly HashSet<int> _hasFiredThisAttack = new();
@@ -384,6 +387,7 @@ public class BotState : BasePlugin
 
             int idx = (int)player.Index;
             float now = Server.CurrentTime;
+            TryInterruptReload(player, pawn, bot, now);
             // Door Stuck Fix
             bool inDoorCooldown = _doorEventCooldown.TryGetValue(idx, out float doorCooldownEnd) && now < doorCooldownEnd;
 
@@ -810,6 +814,7 @@ public class BotState : BasePlugin
         _stuckMaxSpeed.Clear();
         _idleStartTime.Clear();
         _lastRepathTime.Clear();
+        _reloadInterruptCooldown.Clear();
         _hasFiredThisAttack.Clear();
         _prevIsAttacking.Clear();
         _cachedInAir.Clear();
@@ -883,6 +888,8 @@ public class BotState : BasePlugin
                 bot.Slot, KnifeDefinitionIndex);
             bool locked = BotControllerBridge.LockKnife(
                 _botController, bot.Slot);
+            if (switched)
+                QueueInspectPulse(bot.Slot);
             if (locked)
                 _knifeLockedBotSlots.Add(bot.Slot);
 
@@ -893,6 +900,27 @@ public class BotState : BasePlugin
             }
         }
 
+    }
+
+    // Queues a native usercmd inspect pulse after the knife becomes active
+    private void QueueInspectPulse(int slot)
+    {
+        Server.NextFrame(() =>
+        {
+            if (_botController == null) return;
+
+            var player = Utilities.GetPlayerFromSlot(slot);
+            if (player == null || !player.IsValid || !player.IsBot ||
+                !player.PawnIsAlive || player.HasBeenControlledByPlayerThisRound)
+                return;
+
+            if (!BotControllerBridge.PulseUsercmdButton(
+                    _botController, slot, InspectButtonMask))
+            {
+                Console.WriteLine(
+                    $"[Smarter-Bot] Inspect pulse failed for slot {slot}");
+            }
+        });
     }
 
     // Releases only Slot3 locks successfully applied by this plugin
@@ -929,6 +957,15 @@ public class BotState : BasePlugin
         {
             return ((BotControllerApi.IBotControllerApi)api)
                 .SwitchBotWeapon(slot, defIndex);
+        }
+
+        // Queues one usercmd button press and release on a Bot
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static bool PulseUsercmdButton(
+            object api, int slot, ulong buttonMask)
+        {
+            return ((BotControllerApi.IBotControllerApi)api)
+                .PulseUsercmdButton(slot, buttonMask);
         }
 
         // Applies the knife-slot weapon lock to one Bot
@@ -1199,6 +1236,90 @@ public class BotState : BasePlugin
         hasVisitedEnemySpawn = true;
     }
     //---------------------------------------------------------------------------------------
+    // Cancels a reload when Valve reports a visible enemy and a usable firearm exists
+    private void TryInterruptReload(
+        CCSPlayerController player, CCSPlayerPawn pawn, CCSBot bot, float now)
+    {
+        if (_botController == null || !bot.IsEnemyVisible ||
+            !IsReloading(player))
+            return;
+
+        int slot = player.Slot;
+        if (_reloadInterruptCooldown.TryGetValue(slot, out float cooldownEnd) &&
+            now < cooldownEnd)
+            return;
+
+        if (!TryGetReloadInterruptWeapon(pawn, out int weaponDefIndex))
+            return;
+
+        if (!BotControllerBridge.SwitchBotWeapon(
+                _botController, slot, KnifeDefinitionIndex))
+            return;
+
+        _reloadInterruptCooldown[slot] = now + ReloadInterruptCooldown;
+        Server.NextFrame(() => SwitchBackAfterReloadInterrupt(
+            slot, weaponDefIndex));
+    }
+
+    // Selects a loaded primary first, then a loaded secondary weapon
+    private static bool TryGetReloadInterruptWeapon(
+        CCSPlayerPawn pawn, out int weaponDefIndex)
+    {
+        weaponDefIndex = -1;
+        int secondaryDefIndex = -1;
+        var weapons = pawn.WeaponServices?.MyWeapons;
+        if (weapons == null) return false;
+
+        foreach (var weaponHandle in weapons)
+        {
+            var baseWeapon = weaponHandle.Value;
+            if (baseWeapon == null || !baseWeapon.IsValid) continue;
+
+            var weapon = new CCSWeaponBase(baseWeapon.Handle);
+            var weaponData = weapon.VData;
+            if (weaponData == null) continue;
+
+            int defIndex = weapon.AttributeManager.Item.ItemDefinitionIndex;
+            if (defIndex <= 0) continue;
+
+            if (weaponData.GearSlot == gear_slot_t.GEAR_SLOT_RIFLE &&
+                weapon.Clip1 >= 5)
+            {
+                weaponDefIndex = defIndex;
+                return true;
+            }
+
+            if (secondaryDefIndex < 0 &&
+                weaponData.GearSlot == gear_slot_t.GEAR_SLOT_PISTOL &&
+                weapon.Clip1 > 0)
+            {
+                secondaryDefIndex = defIndex;
+            }
+        }
+
+        weaponDefIndex = secondaryDefIndex;
+        return weaponDefIndex >= 0;
+    }
+
+    // Returns a live Bot to the chosen firearm one frame after selecting its knife
+    private void SwitchBackAfterReloadInterrupt(int slot, int weaponDefIndex)
+    {
+        if (_botController == null) return;
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player == null || !player.IsValid || !player.IsBot ||
+            !player.PawnIsAlive || player.HasBeenControlledByPlayerThisRound)
+            return;
+
+        if (!BotControllerBridge.SwitchBotWeapon(
+                _botController, slot, weaponDefIndex))
+        {
+            Console.WriteLine(
+                $"[Smarter-Bot] Reload interrupt restore failed for slot {slot}");
+        }
+    }
+
+    // Reports whether the Bot's active weapon is currently reloading
     private bool IsReloading(CCSPlayerController player)
     {
         if (player == null || !player.IsValid)
