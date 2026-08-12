@@ -5,19 +5,22 @@ using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.Modules.Memory;
+using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Core.Capabilities;
 using RayTraceAPI;
 using BotControllerApi;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace BotState;
 
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.8.2";
+    public override string ModuleVersion => "1.8.3";
     public override string ModuleAuthor => "ed0ard & XBribo";
     public override string ModuleDescription => "Make bots smarter";
 
@@ -27,6 +30,15 @@ public class BotState : BasePlugin
     private const int KnifeDefinitionIndex = 9001;
     private const float ReloadInterruptCooldown = 0.75f;
     private const ulong InspectButtonMask = (ulong)PlayerButtons.Inspect;
+    private const ulong UseButtonMask = (ulong)PlayerButtons.Use;
+    private const float FakeDefuseHoldMinSeconds = 0.4f;
+    private const float FakeDefuseHoldMaxSeconds = 0.8f;
+    private const float FakeDefuseSearchMinSeconds = 2.0f;
+    private const float FakeDefuseSearchMaxSeconds = 4.0f;
+    private const string DefuseBombWindowsSignature =
+        "48 8D 91 08 04 00 00 E9 ? ? ? ?";
+    private const string DefuseBombLinuxSignature =
+        "48 8D B7 00 04 00 00 E9 ? ? ? ?";
 
     private bool _isExpanded = false;
     private ConVar? _smokeConVar;
@@ -51,6 +63,9 @@ public class BotState : BasePlugin
     private readonly Dictionary<int, float> _idleStartTime = new();
     private readonly Dictionary<int, float> _lastRepathTime = new();
     private readonly Dictionary<int, float> _reloadInterruptCooldown = new();
+    private readonly Dictionary<int, float> _fakeDefuseCooldown = new();
+    private readonly Dictionary<nint, float> _fakeDefuseGuardUntil = new();
+    private readonly Dictionary<nint, int> _fakeDefuseCounts = new();
     private bool _isFreezeTime = false;
 
     private readonly HashSet<int> _hasFiredThisAttack = new();
@@ -67,6 +82,7 @@ public class BotState : BasePlugin
 
     private readonly HashSet<int> _knifeLockedBotSlots = new();
     private object? _botController;
+    private MemoryFunctionVoid<nint>? _defuseBombFunction;
     private bool _eliminationHandled;
 
     private const float FlashFuseSeconds = 1.5f;        // CS2 flashbang fuse
@@ -92,6 +108,7 @@ public class BotState : BasePlugin
     // Registers game events and the per-tick bot behavior listener
     public override void Load(bool hotReload)
     {
+        InstallDefuseBombHook();
         _smokeConVar = ConVar.Find("bot_max_visible_smoke_length");
         RegisterEventHandler<EventRoundStart>(OnRoundStart);
         RegisterEventHandler<EventPlayerHurt>(OnPlayerHurt);
@@ -195,6 +212,7 @@ public class BotState : BasePlugin
     // Restores plugin-owned state before the plugin unloads
     public override void Unload(bool hotReload)
     {
+        UninstallDefuseBombHook();
         ReleaseKnifeLocks();
         SetSmokeLength(NormalValue);
         _defuseExpandTimer?.Kill();
@@ -822,6 +840,9 @@ public class BotState : BasePlugin
         _idleStartTime.Clear();
         _lastRepathTime.Clear();
         _reloadInterruptCooldown.Clear();
+        _fakeDefuseCooldown.Clear();
+        _fakeDefuseGuardUntil.Clear();
+        _fakeDefuseCounts.Clear();
         _hasFiredThisAttack.Clear();
         _prevIsAttacking.Clear();
         _cachedInAir.Clear();
@@ -996,6 +1017,15 @@ public class BotState : BasePlugin
         {
             return ((BotControllerApi.IBotControllerApi)api)
                 .InjectUsercmd(slot, buttonMask, durationMs);
+        }
+
+        // Suppresses selected usercmd buttons for a fixed duration
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static bool SuppressUsercmd(
+            object api, int slot, ulong buttonMask, int durationMs)
+        {
+            return ((BotControllerApi.IBotControllerApi)api)
+                .SuppressUsercmd(slot, buttonMask, durationMs);
         }
 
         // Applies the knife-slot weapon lock to one Bot
@@ -1213,26 +1243,137 @@ public class BotState : BasePlugin
                 ? new CCSPlayer_ItemServices(pawn.ItemServices!.Handle)
                 : null;
             bool hasDefuser = itemSvc?.HasDefuser ?? false;
-            double fakeChance = hasDefuser ? 0.10 : 0.66;
+            double baseFakeChance = hasDefuser ? 0.10 : 0.66;
+            int fakeDefuseCount = _fakeDefuseCounts.GetValueOrDefault(bot.Handle);
+            double fakeChance = baseFakeChance * Math.Pow(0.5, fakeDefuseCount);
+            int slot = player.Slot;
+            bool fakeDefuseCoolingDown = _fakeDefuseCooldown.TryGetValue(
+                slot, out float cooldownEnd) && Server.CurrentTime < cooldownEnd;
 
-            if (_random.NextDouble() < fakeChance)
+            if (!fakeDefuseCoolingDown && _random.NextDouble() < fakeChance)
             {
-                float yaw = pawn.EyeAngles.Y * MathF.PI / 180f;
-                float rx = -MathF.Sin(yaw);
-                float ry = MathF.Cos(yaw);
-                float side = _random.NextDouble() < 0.5 ? 1f : -1f;
-
-                pawn.AbsVelocity.X += rx * side * 150f;
-                pawn.AbsVelocity.Y += ry * side * 150f;
-                pawn.AbsVelocity.Z += 255f;
-
-                ResetLookAroundForBot(player);
+                ScheduleFakeDefuse(player);
             }
         }
 
         return HookResult.Continue;
     }
 
+    // Keeps the real defuse sound briefly before entering the guard search window
+    private void ScheduleFakeDefuse(CCSPlayerController player)
+    {
+        if (_botController == null || _defuseBombFunction == null) return;
+
+        float holdSeconds = FakeDefuseHoldMinSeconds +
+            (float)_random.NextDouble() *
+            (FakeDefuseHoldMaxSeconds - FakeDefuseHoldMinSeconds);
+        float searchSeconds = FakeDefuseSearchMinSeconds +
+            (float)_random.NextDouble() *
+            (FakeDefuseSearchMaxSeconds - FakeDefuseSearchMinSeconds);
+
+        float now = Server.CurrentTime;
+        int slot = player.Slot;
+        _fakeDefuseCooldown[slot] = now + holdSeconds + searchSeconds;
+
+        AddTimer(
+            holdSeconds,
+            () => FinishFakeDefuse(slot, searchSeconds),
+            CounterStrikeSharp.API.Modules.Timers.TimerFlags.STOP_ON_MAPCHANGE);
+    }
+
+    // Releases Use and leaves the Bot near the bomb to acquire threats normally
+    private void FinishFakeDefuse(int slot, float searchSeconds)
+    {
+        if (_botController == null) return;
+
+        var player = Utilities.GetPlayerFromSlot(slot);
+        if (player == null || !player.IsValid || !player.IsBot ||
+            !player.PawnIsAlive || player.HasBeenControlledByPlayerThisRound)
+            return;
+
+        var pawn = player.PlayerPawn?.Value;
+        if (pawn == null || !pawn.IsValid || !pawn.IsDefusing) return;
+
+        var bot = pawn.Bot;
+        if (bot == null) return;
+
+        int searchDurationMs = (int)MathF.Ceiling(searchSeconds * 1000.0f);
+        if (!BotControllerBridge.SuppressUsercmd(
+                _botController,
+                slot,
+                UseButtonMask,
+                searchDurationMs))
+            return;
+
+        _fakeDefuseGuardUntil[bot.Handle] = Server.CurrentTime + searchSeconds;
+        _fakeDefuseCounts[bot.Handle] =
+            _fakeDefuseCounts.GetValueOrDefault(bot.Handle) + 1;
+
+        ref float stateTimestamp = ref bot.StateTimestamp;
+        stateTimestamp = Server.CurrentTime - 2.0f;
+
+        ResetLookAroundForBot(player);
+    }
+
+    // Installs the Smarter-Bot-owned guard for native DefuseBomb state entry
+    private void InstallDefuseBombHook()
+    {
+        try
+        {
+            string signature = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? DefuseBombWindowsSignature
+                : DefuseBombLinuxSignature;
+            _defuseBombFunction = new MemoryFunctionVoid<nint>(signature);
+            _defuseBombFunction.Hook(OnDefuseBombPre, HookMode.Pre);
+        }
+        catch (Exception ex)
+        {
+            _defuseBombFunction = null;
+            Logger.LogError(ex,
+                "[Smarter-Bot] CCSBot::DefuseBomb hook unavailable; fake defuse disabled");
+        }
+    }
+
+    // Removes the Smarter-Bot-owned DefuseBomb state-entry guard
+    private void UninstallDefuseBombHook()
+    {
+        if (_defuseBombFunction == null) return;
+
+        try
+        {
+            _defuseBombFunction.Unhook(OnDefuseBombPre, HookMode.Pre);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "[Smarter-Bot] Failed to remove CCSBot::DefuseBomb hook cleanly");
+        }
+        _defuseBombFunction = null;
+    }
+
+    // Stops guarded Bots before the engine can enter DefuseBomb again
+    private HookResult OnDefuseBombPre(DynamicHook hook)
+    {
+        try
+        {
+            nint botAddress = hook.GetParam<nint>(0);
+            if (botAddress == nint.Zero) return HookResult.Continue;
+
+            if (_fakeDefuseGuardUntil.TryGetValue(botAddress, out float guardUntil))
+            {
+                if (Server.CurrentTime < guardUntil) return HookResult.Stop;
+                _fakeDefuseGuardUntil.Remove(botAddress);
+            }
+        }
+        catch
+        {
+            return HookResult.Continue;
+        }
+
+        return HookResult.Continue;
+    }
+
+    // Resets the Bot's look-around bookkeeping so it can reacquire threats
     private static void ResetLookAroundForBot(CCSPlayerController? player)
     {
         if (player == null || !player.IsValid || !player.IsBot) return;
