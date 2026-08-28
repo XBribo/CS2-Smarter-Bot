@@ -8,7 +8,6 @@ using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Core.Capabilities;
-using RayTraceAPI;
 using BotControllerApi;
 using Microsoft.Extensions.Logging;
 using System;
@@ -74,10 +73,7 @@ public class BotState : BasePlugin
     private readonly Dictionary<int, bool> _cachedInAir = new();
     private readonly Dictionary<int, bool> _cachedNearLadder = new();
 
-    // Flashbang avoidance via Ray-Trace
-    private static readonly PluginCapability<CRayTraceInterface> RayTraceCap =
-        new("raytrace:craytraceinterface");
-    private CRayTraceInterface? _rayTrace;
+    // Flashbang avoidance via ray tracing
     private Vector? _scratchEye;
 
     private readonly HashSet<int> _knifeLockedBotSlots = new();
@@ -135,12 +131,7 @@ public class BotState : BasePlugin
     // Resolves capabilities supplied by plugins after every plugin has loaded
     public override void OnAllPluginsLoaded(bool hotReload)
     {
-        try { _rayTrace = RayTraceCap.Get(); } catch { _rayTrace = null; }
-        if (_rayTrace == null)
-            Console.WriteLine("[Smarter-Bot] Ray-Trace not available");
-        else
-            _scratchEye = new Vector();
-
+        _scratchEye = new Vector();
         try { _botController = BotControllerBridge.TryGet(); } catch { _botController = null; }
         if (_botController == null)
             Console.WriteLine("[Smarter-Bot] BotController API not available");
@@ -163,8 +154,7 @@ public class BotState : BasePlugin
         }
 
         cmd.ReplyToCommand($"[Smarter-Bot] flash debug = {_debugFlash}");
-        cmd.ReplyToCommand($"[Smarter-Bot] ray-trace loaded = {_rayTrace != null}");
-        Console.WriteLine($"[Smarter-Bot] flash debug = {_debugFlash}, raytrace = {_rayTrace != null}");
+        Console.WriteLine($"[Smarter-Bot] flash debug = {_debugFlash}");
     }
 
     // Server stdout + every connected human's console. Use only for debug-gated lines
@@ -304,23 +294,15 @@ public class BotState : BasePlugin
             }
         }
 
-        if (_rayTrace != null)
+        if (matchedKey.HasValue)
         {
-            if (matchedKey.HasValue)
-            {
-                isImmune = matched.Avoided;
-                _flashDecisions.Remove(matchedKey.Value);
-            }
-            else
-            {
-                // Bot never saw this flash through FOV+LOS — should be flashed normally
-                isImmune = false;
-            }
+            isImmune = matched.Avoided;
+            _flashDecisions.Remove(matchedKey.Value);
         }
         else
         {
-            // Fallback when raytrace is unavailable
-            isImmune = _random.NextDouble() <= 0.6;
+            // Bot never saw this flash through FOV+LOS — should be flashed normally
+            isImmune = false;
         }
 
         if (isImmune)
@@ -1602,7 +1584,7 @@ public class BotState : BasePlugin
     // probability. The result is consumed in OnPlayerBlind.
     private void ProcessFlashbangAvoidance()
     {
-        if (_rayTrace == null || _scratchEye == null) return;
+        if (_scratchEye == null) return;
 
         float now = Server.CurrentTime;
 
@@ -1780,7 +1762,7 @@ public class BotState : BasePlugin
 
     private bool BotCanSee(CCSPlayerPawn pawn, Vector target)
     {
-        if (_rayTrace == null || _scratchEye == null) return false;
+        if (_scratchEye == null) return false;
 
         var origin = pawn.AbsOrigin;
         if (origin == null) return false;
@@ -1789,8 +1771,8 @@ public class BotState : BasePlugin
         _scratchEye.Y = origin.Y;
         _scratchEye.Z = origin.Z + pawn.ViewOffset.Z;
 
-        var opts = new TraceOptions(InteractionLayers.MASK_WORLD_ONLY);
-        _rayTrace.TraceEndShape(_scratchEye, target, pawn, opts, out var result);
+        var opts = new TraceOptions { InteractsWith = Masks.SolidBrushOnly };
+        var result = Trace.TraceEndShape(_scratchEye, target, pawn, opts);
         return result.Fraction >= 0.999f;
     }
 }
