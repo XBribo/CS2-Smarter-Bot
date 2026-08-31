@@ -39,6 +39,8 @@ public class BotState : BasePlugin
         "48 8D B7 00 04 00 00 E9 ? ? ? ?";
     private const string BotBlindWindowsSignature =
         "40 53 48 81 EC 90 00 00 00 0F 29 B4 24 80 00 00 00 48 8D 15 ? ? ? ? 0F 57 C0 0F 29 7C 24 70";
+    private const string BotBlindLinuxSignature =
+        "55 48 8D 35 ? ? ? ? B8 03 00 00 00 F3 0F 5A D2 48 89 E5 41 56 66 41 0F 7E CE F3 0F 5A C9 41 54 53 48 89 FB 48 83 EC 58";
 
     // 360 FOV patch constants for fake defuse search phase
     private const uint PageExecuteReadWrite = 0x40;
@@ -1520,10 +1522,16 @@ public class BotState : BasePlugin
         });
     }
 
-    // Installs the verified Windows CCSBot::Blind Pre Hook
+    // Installs the platform-specific CCSBot::Blind Pre Hook
     private void InstallBotBlindHook()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        string? signature = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? BotBlindWindowsSignature
+            : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                ? BotBlindLinuxSignature
+                : null;
+
+        if (signature == null)
         {
             Logger.LogWarning(
                 "[Smarter-Bot] CCSBot::Blind hook is unavailable on this platform; using event fallback");
@@ -1533,7 +1541,7 @@ public class BotState : BasePlugin
         try
         {
             _botBlindFunction =
-                new MemoryFunctionVoid<nint, float, float, float>(BotBlindWindowsSignature);
+                new MemoryFunctionVoid<nint, float, float, float>(signature);
             _botBlindFunction.Hook(OnBotBlindPre, HookMode.Pre);
         }
         catch (Exception ex)
