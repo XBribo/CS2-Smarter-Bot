@@ -2,6 +2,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Core.Attributes;
+using CounterStrikeSharp.API.Modules.Cvars;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.Modules.Memory;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
@@ -18,8 +19,8 @@ namespace BotState;
 public class BotState : BasePlugin
 {
     public override string ModuleName => "Smarter-Bot";
-    public override string ModuleVersion => "1.9.3";
-    public override string ModuleAuthor => "ed0ard & XBribo";
+    public override string ModuleVersion => "1.9.4";
+    public override string ModuleAuthor => "ed0ard & XBribo & unicbm";
     public override string ModuleDescription => "Make bots smarter";
 
     private const float HurtRevealSeconds = 0.8f;
@@ -957,6 +958,12 @@ public class BotState : BasePlugin
     // Detects elimination while explicitly excluding the current death victim
     private HookResult OnPlayerDeath(EventPlayerDeath @event, GameEventInfo info)
     {
+        // Deathmatch is free-for-all even though the engine still reports
+        // temporary T/CT team numbers. Do not treat the last bot on one side
+        // as a round elimination and lock the other bots to their knives.
+        if (IsDeathmatch())
+            return HookResult.Continue;
+
         if (_botController == null)
             return HookResult.Continue;
 
@@ -980,6 +987,14 @@ public class BotState : BasePlugin
             MaybeInspectOnKill(@event.Attacker);
 
         return HookResult.Continue;
+    }
+
+    private static bool IsDeathmatch()
+    {
+        var gameType = ConVar.Find("game_type");
+        var gameMode = ConVar.Find("game_mode");
+        return gameType?.GetPrimitiveValue<int>() == 1
+            && gameMode?.GetPrimitiveValue<int>() == 2;
     }
 
     // Rolls a 10% inspect for the Bot credited with a kill
