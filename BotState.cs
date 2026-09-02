@@ -39,9 +39,9 @@ public class BotState : BasePlugin
     private const string DefuseBombLinuxSignature =
         "48 8D B7 00 04 00 00 E9 ? ? ? ?";
     private const string BotBlindWindowsSignature =
-        "40 53 48 81 EC 90 00 00 00 0F 29 B4 24 80 00 00 00 48 8D 15 ? ? ? ? 0F 57 C0 0F 29 7C 24 70";
+        "40 53 48 81 EC ? ? ? ? 0F 29 B4 24 ? ? ? ? 48 8D 15";
     private const string BotBlindLinuxSignature =
-        "55 48 8D 35 ? ? ? ? B8 03 00 00 00 F3 0F 5A D2 48 89 E5 41 56 66 41 0F 7E CE F3 0F 5A C9 41 54 53 48 89 FB 48 83 EC 58";
+        "55 48 8D 35 ? ? ? ? B8 ? ? ? ? F3 0F 5A D2";
 
     // 360 FOV patch constants for fake defuse search phase
     private const uint PageExecuteReadWrite = 0x40;
