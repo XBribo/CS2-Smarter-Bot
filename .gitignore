@@ -10,8 +10,7 @@ publish/
 *.user
 *.suo
 
-# Local dependency checkout
-Ray-Trace/
+# Local dependency binaries
 libs/
 
 # OS
