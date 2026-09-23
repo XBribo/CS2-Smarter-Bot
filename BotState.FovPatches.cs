@@ -45,17 +45,17 @@ public partial class BotState
     [
         new(
             "IsVisiblePos_IgnoreFOV",
-            "80 BD ? ? ? ? 00 74 ? 48 8B 7B 18 48 8B B5 ? ? ? ? 48 8B 07 FF 90 A0 09 00 00 84 C0 74 ?",
+            "80 BD ? ? ? ? 00 74 ? 48 8B 7B 18 48 8B B5 ? ? ? ? 48 8B 07 FF 90 B8 09 00 00 84 C0 74 ?",
             7,
             [0x74],                         // je no-FOV path
             [0xEB]),                        // jmp no-FOV path
 
         new(
             "IsVisiblePlayer_IgnoreFOV",
-            "45 84 F6 74 ? 49 8B 54 24 18 48 89 DF 48 8B 0A 48 89 55 98 48 8B 89 A0 09 00 00 48 89 4D A0 FF 90 B8 02 00 00",
+            "45 84 F6 0F 85 ? ? ? ? 48 89 DF FF 90 C0 02 00 00 48 8D 05 ? ? ? ? 66 0F D6 45 B0",
             3,
-            [0x74],                         // je no-FOV path
-            [0xEB]),                        // jmp no-FOV path
+            [0x0F, 0x85, 0xB6, 0x00, 0x00, 0x00], // jne into optional FOV path
+            [0x90, 0x90, 0x90, 0x90, 0x90, 0x90]), // bypass optional FOV path
     ];
 
     private const int LinuxPageRead = 0x1;
